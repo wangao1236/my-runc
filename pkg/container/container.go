@@ -34,6 +34,12 @@ func NewParentProcess(tty bool, args []string) *exec.Cmd {
 // 然后执行 execve 替换掉 /proc/self/exe，将用户传入的命令参数，作为 1 号进程
 func RunContainerInitProcess(args []string) error {
 	logrus.Infof("init container for args: %+v", args)
+
+	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
+		logrus.Errorf("failed to mount root in private way: %v", err)
+		return err
+	}
+
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
 		logrus.Errorf("mount /proc failed: %v", err)
@@ -46,6 +52,16 @@ func RunContainerInitProcess(args []string) error {
 		return err
 	}
 	logrus.Infof("old process one: \n%v", processOne)
+
+	// 同时，我们使用 lookPath 的方式去查找命令进行执行
+	var path string
+	path, err = exec.LookPath(args[0])
+	if err != nil {
+		logrus.Errorf("can't find exec path %v: %v", args[0], err)
+		return err
+	}
+	logrus.Infof("find path: %s", path)
+	args[0] = path
 	if err = syscall.Exec(args[0], args, os.Environ()); err != nil {
 		logrus.Errorf("exec (%+v) failed: %v", args, err)
 		return err

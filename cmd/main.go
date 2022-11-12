@@ -28,7 +28,6 @@ func main() {
 		logrus.SetFormatter(&logrus.TextFormatter{
 			FullTimestamp: true,
 		})
-		//logrus.SetFormatter(&logrus.JSONFormatter{})
 		logrus.SetOutput(os.Stdout)
 		return nil
 	}
