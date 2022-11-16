@@ -14,6 +14,6 @@ var InitCommand = cli.Command{
 	// 2. 执行容器初始化操作。
 	Action: func(ctx *cli.Context) error {
 		logrus.Infof("init args: %+v", ctx.Args())
-		return container.RunContainerInitProcess(ctx.Args())
+		return container.RunContainerInitProcess()
 	},
 }

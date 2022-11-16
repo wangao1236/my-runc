@@ -1,8 +1,10 @@
 package container
 
 import (
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/sirupsen/logrus"
@@ -13,9 +15,12 @@ import (
 // 1. 调用 /proc/self/exe，使用这种方式对创造出来的进程进行初始化，并隔离新的 namespace 中执行
 // 2. 其中 init 是传递给本进程的第一个参数，表示 fork 出的进程会执行我们的 init 命令
 // 3. 如果用户指定了 -it 参数，就需要把当前进程的输入输出导入到标准输入输出上
-func NewParentProcess(tty bool, args []string) *exec.Cmd {
-	newArgs := append([]string{"init"}, args...)
-	cmd := exec.Command("/proc/self/exe", newArgs...)
+func NewParentProcess(tty bool) (*exec.Cmd, *os.File, error) {
+	readPipe, writePipe, err := newPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd := exec.Command("/proc/self/exe", "init")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS |
 			syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,
@@ -25,14 +30,17 @@ func NewParentProcess(tty bool, args []string) *exec.Cmd {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
-	return cmd
+	// 将管道的一端传入 fork 的进程中
+	cmd.ExtraFiles = []*os.File{readPipe}
+	return cmd, writePipe, nil
 }
 
 // RunContainerInitProcess 是在容器内部执行的，会执行一些初始化操作。
 // 代码执行到这里时，容器所在的进程其实就已经创建出来了，这是本容器执行的第一个进程。
 // 使用 mount 先去挂载 proc 文件系统，
 // 然后执行 execve 替换掉 /proc/self/exe，将用户传入的命令参数，作为 1 号进程
-func RunContainerInitProcess(args []string) error {
+func RunContainerInitProcess() error {
+	args := readArgs()
 	logrus.Infof("init container for args: %+v", args)
 
 	if err := syscall.Mount("", "/", "", syscall.MS_PRIVATE|syscall.MS_REC, ""); err != nil {
@@ -73,4 +81,23 @@ func RunContainerInitProcess(args []string) error {
 	}
 	logrus.Infof("new process one: \n%v", processOne)
 	return nil
+}
+
+func newPipe() (*os.File, *os.File, error) {
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		logrus.Errorf("failed to create io pipe: %v", err)
+		return nil, nil, err
+	}
+	return readPipe, writePipe, nil
+}
+
+func readArgs() []string {
+	readPipe := os.NewFile(uintptr(3), "pipe")
+	msg, err := ioutil.ReadAll(readPipe)
+	if err != nil {
+		logrus.Errorf("failed to read args from pipe: %v", err)
+		return nil
+	}
+	return strings.Split(string(msg), " ")
 }

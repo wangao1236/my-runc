@@ -2,6 +2,8 @@ package command
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -69,20 +71,34 @@ func Run(tty bool, args []string, res *cgroup.ResourceConfig) {
 	}
 	logrus.Infof("set resource (%+v) to cgroups for parent process", res)
 
-	parent := container.NewParentProcess(tty, args)
+	parent, writePipe, err := container.NewParentProcess(tty)
+	if err != nil {
+		logrus.Fatalf("failed to build parent process: %v", err)
+	}
 	logrus.Infof("parent process command: %v", parent.String())
-	if err := parent.Start(); err != nil {
+	if err = parent.Start(); err != nil {
 		logrus.Fatalf("parent process failed to start: %v", err)
 	}
 
-	if err := cgroupManager.Apply(parent.Process.Pid); err != nil {
+	if err = cgroupManager.Apply(parent.Process.Pid); err != nil {
 		logrus.Fatalf("failed to apply pid (%v) of parent process to cgroups; %v", parent.Process.Pid, err)
 	}
 	logrus.Infof("applied pid (%v) of parent process to cgroups successfully", parent.Process.Pid)
 
+	sendInitArgs(args, writePipe)
+
 	logrus.Info("parent process started successfully")
-	if err := parent.Wait(); err != nil {
+	if err = parent.Wait(); err != nil {
 		logrus.Errorf("failed to wait parent process stopping: %v", err)
 	}
 	logrus.Info("parent process stopped")
+}
+
+func sendInitArgs(args []string, writePipe *os.File) {
+	if _, err := writePipe.WriteString(strings.Join(args, " ")); err != nil {
+		logrus.Fatalf("write string to pipe for args (%+v) failed: %v", args, err)
+	}
+	if err := writePipe.Close(); err != nil {
+		logrus.Errorf("failed to close write pipe: %v", err)
+	}
 }
