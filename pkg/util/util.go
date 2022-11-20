@@ -3,10 +3,12 @@ package util
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
+	"syscall"
 
 	"github.com/sirupsen/logrus"
 )
@@ -14,6 +16,30 @@ import (
 func ShowProcessOne() (string, error) {
 	cmd := exec.Command("ps", "-c", "1")
 	output, err := cmd.Output()
+	return string(output), err
+}
+
+func ShowProcessesInSpecifyPath(outputPath string) (string, error) {
+	if _, err := os.Stat(outputPath); err == nil {
+		if err = os.RemoveAll(outputPath); err != nil {
+			return "", err
+		}
+	}
+	if _, err := os.Create(outputPath); err != nil {
+		return "", err
+	}
+	if err := ioutil.WriteFile(outputPath, []byte(""), 0777); err != nil {
+
+	}
+	cmd := exec.Command("ps")
+	cmd.Stdin = os.NewFile(uintptr(syscall.Stdin), outputPath)
+	cmd.Stderr = os.NewFile(uintptr(syscall.Stderr), outputPath)
+	cmd.Stdout = os.NewFile(uintptr(syscall.Stdout), outputPath)
+	if err := cmd.Run(); err != nil {
+		logrus.Errorf("failed to run cmd toward %v: %v", outputPath, err)
+		return "", err
+	}
+	output, err := ioutil.ReadFile(outputPath)
 	return string(output), err
 }
 
