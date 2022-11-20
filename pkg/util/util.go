@@ -95,3 +95,14 @@ func FindCgroupMountPoint(subsystem string) (string, error) {
 	logrus.Errorf("subsystem %v is not found", subsystem)
 	return "", fmt.Errorf("subsystem %v is not found", subsystem)
 }
+
+func EnsureDirectory(targetPath string) error {
+	if fi, err := os.Stat(targetPath); err == nil && fi != nil {
+		return nil
+	}
+	if err := os.MkdirAll(targetPath, 0777); err != nil {
+		logrus.Errorf("failed to mkdir target path %v: %v", targetPath, err)
+		return err
+	}
+	return nil
+}
