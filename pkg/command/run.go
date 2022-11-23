@@ -14,7 +14,7 @@ import (
 
 var RunCommand = cli.Command{
 	Name:  "run",
-	Usage: `Create a container with namespace and cgroups limit mydocker run -ti [command]`,
+	Usage: `Create a container with namespace and cgroups limit my-docker run -ti [command]`,
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "it",
@@ -38,6 +38,10 @@ var RunCommand = cli.Command{
 			Value: "busybox.tar",
 			Usage: "Image tar file name",
 		},
+		cli.StringFlag{
+			Name:  "v",
+			Usage: "Volume",
+		},
 	},
 
 	// 这里是 run 命令执行的真正函数：
@@ -50,7 +54,7 @@ var RunCommand = cli.Command{
 		}
 		logrus.Infof("run args: %+v", ctx.Args())
 		tty := ctx.Bool("it")
-		Run(tty, ctx.String("image-tar"), ctx.Args(), &cgroup.ResourceConfig{
+		Run(tty, ctx.String("image-tar"), ctx.String("v"), ctx.Args(), &cgroup.ResourceConfig{
 			MemoryLimit: ctx.String("mem"),
 			CPUShare:    ctx.String("cpu-share"),
 			CPUSet:      ctx.String("cpu-set"),
@@ -62,18 +66,18 @@ var RunCommand = cli.Command{
 // Run fork 出当前进程，执行 init 命令。
 // 它首先会 clone 出来一批 namespace 隔离的进程，然后在子进程中，调用 /proc/self/exe，也就是自己调用自己。
 // 发送 init 参数，调用我们写的 init 方法，去初始化容器的一些资源
-func Run(tty bool, imageTar string, args []string, res *cgroup.ResourceConfig) {
+func Run(tty bool, imageTar, volume string, args []string, res *cgroup.ResourceConfig) {
 	rootDir, err := os.Getwd()
 	if err != nil {
 		logrus.Fatalf("failed to get current directory: %v", err)
 	}
 	var writeLayer, workLayer, workspace string
 	writeLayer, workLayer, workspace, err = layer.CreateWorkspace(rootDir, imageTar,
-		".read", ".write", ".work", ".merge")
+		".read", ".write", ".work", ".merge", volume)
 	if err != nil {
 		logrus.Fatalf("failed to create workspace: %v", err)
 	}
-	defer layer.DeleteWorkspace(workspace, workLayer, writeLayer)
+	defer layer.DeleteWorkspace(workspace, workLayer, writeLayer, volume)
 
 	cgroupManager := cgroup.NewManager("my-docker-cgroup")
 	defer func() {
