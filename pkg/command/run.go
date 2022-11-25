@@ -42,6 +42,10 @@ var RunCommand = cli.Command{
 			Name:  "v",
 			Usage: "Volume",
 		},
+		cli.BoolFlag{
+			Name:  "d",
+			Usage: "Detach container",
+		},
 	},
 
 	// 这里是 run 命令执行的真正函数：
@@ -52,9 +56,10 @@ var RunCommand = cli.Command{
 		if len(ctx.Args()) < 1 {
 			return fmt.Errorf("missing container command")
 		}
-		logrus.Infof("run args: %+v", ctx.Args())
 		tty := ctx.Bool("it")
-		Run(tty, ctx.String("image-tar"), ctx.String("v"), ctx.Args(), &cgroup.ResourceConfig{
+		detach := ctx.Bool("d")
+		logrus.Infof("run args: %+v, enable tty: %v, detach: %v", ctx.Args(), tty, detach)
+		Run(tty, detach, ctx.String("image-tar"), ctx.String("v"), ctx.Args(), &cgroup.ResourceConfig{
 			MemoryLimit: ctx.String("mem"),
 			CPUShare:    ctx.String("cpu-share"),
 			CPUSet:      ctx.String("cpu-set"),
@@ -66,7 +71,7 @@ var RunCommand = cli.Command{
 // Run fork 出当前进程，执行 init 命令。
 // 它首先会 clone 出来一批 namespace 隔离的进程，然后在子进程中，调用 /proc/self/exe，也就是自己调用自己。
 // 发送 init 参数，调用我们写的 init 方法，去初始化容器的一些资源
-func Run(tty bool, imageTar, volume string, args []string, res *cgroup.ResourceConfig) {
+func Run(tty, detach bool, imageTar, volume string, args []string, res *cgroup.ResourceConfig) {
 	rootDir, err := os.Getwd()
 	if err != nil {
 		logrus.Fatalf("failed to get current directory: %v", err)
@@ -77,16 +82,8 @@ func Run(tty bool, imageTar, volume string, args []string, res *cgroup.ResourceC
 	if err != nil {
 		logrus.Fatalf("failed to create workspace: %v", err)
 	}
-	defer layer.DeleteWorkspace(workspace, workLayer, writeLayer, volume)
 
 	cgroupManager := cgroup.NewManager("my-docker-cgroup")
-	defer func() {
-		if err = cgroupManager.Destroy(); err != nil {
-			logrus.Warningf("failed to destroy cgroups: %v", err)
-		} else {
-			logrus.Info("destroy cgroups successfully")
-		}
-	}()
 
 	if err = cgroupManager.Set(res); err != nil {
 		logrus.Fatalf("failed to set resource config to cgroups for parent process: %v", err)
@@ -109,9 +106,17 @@ func Run(tty bool, imageTar, volume string, args []string, res *cgroup.ResourceC
 
 	sendInitArgs(args, writePipe)
 
-	logrus.Info("parent process started successfully")
-	if err = parent.Wait(); err != nil {
-		logrus.Errorf("failed to wait parent process stopping: %v", err)
+	logrus.Infof("parent process started successfully, detach: %v", detach)
+	if !detach {
+		if err = parent.Wait(); err != nil {
+			logrus.Errorf("failed to wait parent process stopping: %v", err)
+		}
+		if err = cgroupManager.Destroy(); err != nil {
+			logrus.Warningf("failed to destroy cgroups: %v", err)
+		} else {
+			logrus.Info("destroy cgroups successfully")
+		}
+		layer.DeleteWorkspace(workspace, workLayer, writeLayer, volume)
 	}
 	logrus.Info("parent process stopped")
 }
