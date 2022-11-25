@@ -80,6 +80,20 @@ func RunContainerInitProcess() error {
 	return nil
 }
 
+func CommitContainer(imageName string) error {
+	rootDir, err := os.Getwd()
+	if err != nil {
+		logrus.Fatalf("failed to get current directory: %v", err)
+	}
+	workspace := path.Join(rootDir, ".merge")
+	imageTar := path.Join(rootDir, imageName)
+	logrus.Infof("try to commit image to %v", imageTar)
+	if _, err = exec.Command("tar", "-czf", imageTar, "-C", workspace, ".").CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to commit image to %v: %v", workspace, err)
+	}
+	return nil
+}
+
 func newPipe() (*os.File, *os.File, error) {
 	readPipe, writePipe, err := os.Pipe()
 	if err != nil {
