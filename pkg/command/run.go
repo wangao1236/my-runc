@@ -46,6 +46,10 @@ var RunCommand = cli.Command{
 			Name:  "d",
 			Usage: "Detach container",
 		},
+		cli.StringFlag{
+			Name:  "name",
+			Usage: "Container name",
+		},
 	},
 
 	// 这里是 run 命令执行的真正函数：
@@ -58,8 +62,12 @@ var RunCommand = cli.Command{
 		}
 		tty := ctx.Bool("it")
 		detach := ctx.Bool("d")
-		logrus.Infof("run args: %+v, enable tty: %v, detach: %v", ctx.Args(), tty, detach)
-		Run(tty, detach, ctx.String("image-tar"), ctx.String("v"), ctx.Args(), &cgroup.ResourceConfig{
+		containerName := ctx.String("name")
+		imageTar := ctx.String("image-tar")
+		volume := ctx.String("v")
+		logrus.Infof("run args: %+v, container name: %v, enable tty: %v, detach: %v",
+			ctx.Args(), containerName, tty, detach)
+		Run(tty, detach, containerName, imageTar, volume, ctx.Args(), &cgroup.ResourceConfig{
 			MemoryLimit: ctx.String("mem"),
 			CPUShare:    ctx.String("cpu-share"),
 			CPUSet:      ctx.String("cpu-set"),
@@ -71,7 +79,7 @@ var RunCommand = cli.Command{
 // Run fork 出当前进程，执行 init 命令。
 // 它首先会 clone 出来一批 namespace 隔离的进程，然后在子进程中，调用 /proc/self/exe，也就是自己调用自己。
 // 发送 init 参数，调用我们写的 init 方法，去初始化容器的一些资源
-func Run(tty, detach bool, imageTar, volume string, args []string, res *cgroup.ResourceConfig) {
+func Run(tty, detach bool, containerName string, imageTar, volume string, args []string, res *cgroup.ResourceConfig) {
 	rootDir, err := os.Getwd()
 	if err != nil {
 		logrus.Fatalf("failed to get current directory: %v", err)
@@ -82,9 +90,22 @@ func Run(tty, detach bool, imageTar, volume string, args []string, res *cgroup.R
 	if err != nil {
 		logrus.Fatalf("failed to create workspace: %v", err)
 	}
+	defer func() {
+		if !detach {
+			layer.DeleteWorkspace(workspace, workLayer, writeLayer, volume)
+		}
+	}()
 
 	cgroupManager := cgroup.NewManager("my-docker-cgroup")
-
+	defer func() {
+		if !detach {
+			if err = cgroupManager.Destroy(); err != nil {
+				logrus.Warningf("failed to destroy cgroups: %v", err)
+			} else {
+				logrus.Info("destroy cgroups successfully")
+			}
+		}
+	}()
 	if err = cgroupManager.Set(res); err != nil {
 		logrus.Fatalf("failed to set resource config to cgroups for parent process: %v", err)
 	}
@@ -99,6 +120,17 @@ func Run(tty, detach bool, imageTar, volume string, args []string, res *cgroup.R
 		logrus.Fatalf("parent process failed to start: %v", err)
 	}
 
+	if err = container.RecordMetadata(parent.Process.Pid, args, containerName); err != nil {
+		logrus.Fatalf("failed to record metadata of container (%v): %v", containerName, err)
+	}
+	defer func() {
+		if !detach {
+			if err = container.RemoveMetadata(containerName); err != nil {
+				logrus.Warningf("failed to remove metadata of container (%v): %v", containerName, err)
+			}
+		}
+	}()
+
 	if err = cgroupManager.Apply(parent.Process.Pid); err != nil {
 		logrus.Fatalf("failed to apply pid (%v) of parent process to cgroups; %v", parent.Process.Pid, err)
 	}
@@ -111,12 +143,6 @@ func Run(tty, detach bool, imageTar, volume string, args []string, res *cgroup.R
 		if err = parent.Wait(); err != nil {
 			logrus.Errorf("failed to wait parent process stopping: %v", err)
 		}
-		if err = cgroupManager.Destroy(); err != nil {
-			logrus.Warningf("failed to destroy cgroups: %v", err)
-		} else {
-			logrus.Info("destroy cgroups successfully")
-		}
-		layer.DeleteWorkspace(workspace, workLayer, writeLayer, volume)
 	}
 	logrus.Info("parent process stopped")
 }

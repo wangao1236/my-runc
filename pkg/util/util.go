@@ -2,16 +2,23 @@ package util
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 func ShowProcessOne() (string, error) {
 	cmd := exec.Command("ps", "-c", "1")
@@ -105,4 +112,12 @@ func EnsureDirectory(targetPath string) error {
 		return err
 	}
 	return nil
+}
+
+func RandomString(n int) string {
+	var buf bytes.Buffer
+	for i := 0; i < n; i++ {
+		buf.WriteByte(byte(rand.Intn(10) + '0'))
+	}
+	return buf.String()
 }

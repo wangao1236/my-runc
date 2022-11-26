@@ -1,17 +1,109 @@
 package container
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"sort"
 	"strings"
 	"syscall"
+	"text/tabwriter"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/wangao1236/my-docker/pkg/util"
 )
+
+const (
+	StatusRunning = "running"
+	StatusStopped = "stopped"
+	StatusExited  = "exited"
+
+	DefaultMetadataRootDir = "/var/run/my-docker"
+	defaultContainerDir    = "default"
+	metadataConfigName     = "config.json"
+)
+
+func init() {
+	if err := util.EnsureDirectory(DefaultMetadataRootDir); err != nil {
+		logrus.Fatalf("faile to ensure metadata root diectory %v: %v", DefaultMetadataRootDir, err)
+	}
+}
+
+// Metadata 表示容器元数据
+type Metadata struct {
+	PID        int       `json:"pid"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Command    string    `json:"command"`
+	CreateTime time.Time `json:"createTime"`
+	Status     string    `json:"status"`
+}
+
+// RecordMetadata 在容器创建时，将元数据存入配置文件中
+func RecordMetadata(pid int, args []string, containerName string) error {
+	metadata := &Metadata{
+		PID:        pid,
+		ID:         util.RandomString(10),
+		Name:       containerName,
+		Command:    strings.Join(args, " "),
+		CreateTime: time.Now(),
+		Status:     StatusRunning,
+	}
+
+	body, err := json.Marshal(metadata)
+	if err != nil {
+		logrus.Errorf("failed to marshal metadata (%+v): %v", metadata, err)
+		return err
+	}
+
+	metadataDir := medataDir(containerName)
+	if err = util.EnsureDirectory(metadataDir); err != nil {
+		logrus.Errorf("failed to ensure metadata directory %v: %v", metadataDir, err)
+	}
+
+	var file *os.File
+	metadataPath := medataPath(containerName)
+	file, err = os.Create(metadataPath)
+	if err != nil {
+		logrus.Errorf("failed to create file of metadata (%v): %v", metadataPath, err)
+		return err
+	}
+
+	if _, err = file.Write(body); err != nil {
+		logrus.Errorf("failed to write (%v) to metadata file (%v): %v", string(body), metadataPath, err)
+		return err
+	}
+	return nil
+}
+
+func ReadMetadata(containerName string) (*Metadata, error) {
+	currentPath := medataPath(containerName)
+	body, err := ioutil.ReadFile(currentPath)
+	if err != nil {
+		logrus.Errorf("failed to read %v: %v", currentPath, err)
+		return nil, err
+	}
+	metadata := &Metadata{}
+	if err = json.Unmarshal(body, metadata); err != nil {
+		logrus.Errorf("failed to unmarshal %v: %v", string(body), err)
+		return nil, err
+	}
+	return metadata, nil
+}
+
+// RemoveMetadata 在容器退出时，把元数据删除
+func RemoveMetadata(containerName string) error {
+	metadataDir := medataDir(containerName)
+	if err := os.RemoveAll(metadataDir); err != nil {
+		logrus.Errorf("failed to remove metadata directory (%v): %v", metadataDir, err)
+		return err
+	}
+	return nil
+}
 
 // NewParentProcess 构造出一个 command：
 // 1. 调用 /proc/self/exe，使用这种方式对创造出来的进程进行初始化，并隔离新的 namespace 中执行
@@ -90,6 +182,42 @@ func CommitContainer(imageName string) error {
 	logrus.Infof("try to commit image to %v", imageTar)
 	if _, err = exec.Command("tar", "-czf", imageTar, "-C", workspace, ".").CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to commit image to %v: %v", workspace, err)
+	}
+	return nil
+}
+
+func ListContainers() error {
+	files, err := ioutil.ReadDir(DefaultMetadataRootDir)
+	if err != nil {
+		logrus.Errorf("failed to read directory (%v): %v", DefaultMetadataRootDir, err)
+		return err
+	}
+
+	containers := make([]*Metadata, len(files))
+	var metadata *Metadata
+	for i := range files {
+		if !files[i].IsDir() {
+			continue
+		}
+		metadata, err = ReadMetadata(files[i].Name())
+		if err != nil {
+			logrus.Errorf("failed to read metadata of container (%v): %v", files[i].Name(), err)
+			return err
+		}
+		containers[i] = metadata
+	}
+	sort.Slice(containers, func(i, j int) bool {
+		return containers[i].CreateTime.Before(containers[j].CreateTime)
+	})
+
+	w := tabwriter.NewWriter(os.Stdout, 12, 1, 3, ' ', 0)
+	_, _ = fmt.Fprint(w, "ID\tNAME\tPID\tSTATUS\tCOMMAND\tCREATED\n")
+	for _, ctn := range containers {
+		_, _ = fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", ctn.ID, ctn.Name, ctn.PID, ctn.Status, ctn.Command,
+			ctn.CreateTime)
+	}
+	if err = w.Flush(); err != nil {
+		return fmt.Errorf("flush ps write err: %v", err)
 	}
 	return nil
 }
@@ -203,4 +331,15 @@ func pivotRoot(root string) error {
 		return fmt.Errorf("failed to umount put_old directory: %v", err)
 	}
 	return os.Remove(putOld)
+}
+
+func medataDir(containerName string) string {
+	if len(containerName) == 0 {
+		containerName = defaultContainerDir
+	}
+	return path.Join(DefaultMetadataRootDir, containerName)
+}
+
+func medataPath(containerName string) string {
+	return path.Join(medataDir(containerName), metadataConfigName)
 }
