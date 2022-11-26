@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -111,7 +112,9 @@ func Run(tty, detach bool, containerName string, imageTar, volume string, args [
 	}
 	logrus.Infof("set resource (%+v) to cgroups for parent process", res)
 
-	parent, writePipe, err := container.NewParentProcess(tty, workspace)
+	var parent *exec.Cmd
+	var writePipe *os.File
+	parent, writePipe, err = container.NewParentProcess(tty, workspace, containerName)
 	if err != nil {
 		logrus.Fatalf("failed to build parent process: %v", err)
 	}
