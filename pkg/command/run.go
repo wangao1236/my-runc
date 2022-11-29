@@ -123,7 +123,7 @@ func Run(tty, detach bool, containerName string, imageTar, volume string, args [
 		logrus.Fatalf("parent process failed to start: %v", err)
 	}
 
-	if err = container.RecordMetadata(parent.Process.Pid, args, containerName); err != nil {
+	if err = container.CreateMetadata(parent.Process.Pid, args, containerName); err != nil {
 		logrus.Fatalf("failed to record metadata of container (%v): %v", containerName, err)
 	}
 	defer func() {

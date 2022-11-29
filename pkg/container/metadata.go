@@ -39,23 +39,43 @@ type Metadata struct {
 	Status     string    `json:"status"`
 }
 
-// RecordMetadata 在容器创建时，将元数据存入配置文件中
-func RecordMetadata(pid int, args []string, containerName string) error {
-	metadata := &Metadata{
+// CreateMetadata 在容器创建时，将元数据存入配置文件中
+func CreateMetadata(pid int, args []string, containerName string) error {
+	return SaveMetadata(&Metadata{
 		PID:        pid,
 		ID:         util.RandomString(10),
 		Name:       containerName,
 		Command:    strings.Join(args, " "),
 		CreateTime: time.Now(),
 		Status:     StatusRunning,
-	}
+	})
+}
 
+// ReadMetadata 读取容器元数据
+func ReadMetadata(containerName string) (*Metadata, error) {
+	currentPath := generateConfigPath(containerName)
+	body, err := ioutil.ReadFile(currentPath)
+	if err != nil {
+		logrus.Errorf("failed to read %v: %v", currentPath, err)
+		return nil, err
+	}
+	metadata := &Metadata{}
+	if err = json.Unmarshal(body, metadata); err != nil {
+		logrus.Errorf("failed to unmarshal %v: %v", string(body), err)
+		return nil, err
+	}
+	return metadata, nil
+}
+
+// SaveMetadata saves metadata locally.
+func SaveMetadata(metadata *Metadata) error {
 	body, err := json.Marshal(metadata)
 	if err != nil {
 		logrus.Errorf("failed to marshal metadata (%+v): %v", metadata, err)
 		return err
 	}
 
+	containerName := metadata.Name
 	metadataDir := medataDir(containerName)
 	if err = util.EnsureDirectory(metadataDir); err != nil {
 		logrus.Errorf("failed to ensure metadata directory %v: %v", metadataDir, err)
@@ -74,22 +94,6 @@ func RecordMetadata(pid int, args []string, containerName string) error {
 		return err
 	}
 	return nil
-}
-
-// ReadMetadata 读取容器元数据
-func ReadMetadata(containerName string) (*Metadata, error) {
-	currentPath := generateConfigPath(containerName)
-	body, err := ioutil.ReadFile(currentPath)
-	if err != nil {
-		logrus.Errorf("failed to read %v: %v", currentPath, err)
-		return nil, err
-	}
-	metadata := &Metadata{}
-	if err = json.Unmarshal(body, metadata); err != nil {
-		logrus.Errorf("failed to unmarshal %v: %v", string(body), err)
-		return nil, err
-	}
-	return metadata, nil
 }
 
 // RemoveMetadata 在容器退出时，把元数据删除

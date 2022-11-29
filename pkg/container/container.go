@@ -155,6 +155,30 @@ func LogContainer(containerName string) error {
 	return nil
 }
 
+// StopContainer 停止当前运行的容器
+func StopContainer(containerName string) error {
+	metadata, err := ReadMetadata(containerName)
+	if err != nil {
+		logrus.Errorf("failed to read metadata of %v: %v", containerName, err)
+		return err
+	}
+
+	pid := metadata.PID
+	if err = syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		logrus.Errorf("failed to kill -TERM %v: %v", pid, err)
+		return err
+	}
+
+	metadata.PID = 0
+	metadata.Status = StatusStopped
+	if err = SaveMetadata(metadata); err != nil {
+		logrus.Errorf("failed to save metadata of %v: %v", metadata.Name, err)
+		return err
+	}
+	logrus.Infof("%v has been stopped", metadata.Name)
+	return nil
+}
+
 func newPipe() (*os.File, *os.File, error) {
 	readPipe, writePipe, err := os.Pipe()
 	if err != nil {

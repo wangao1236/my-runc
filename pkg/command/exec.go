@@ -11,7 +11,7 @@ import (
 
 var ExecCommand = cli.Command{
 	Name:  "exec",
-	Usage: "Exec command to enter into a container",
+	Usage: "Exec command after entering into a container",
 	Action: func(ctx *cli.Context) error {
 		if os.Getenv(container.EnvMyDockerPID) != "" {
 			logrus.Infof("pid callback pid: %v", os.Getgid())
