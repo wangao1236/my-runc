@@ -76,7 +76,7 @@ func SaveMetadata(metadata *Metadata) error {
 	}
 
 	containerName := metadata.Name
-	metadataDir := medataDir(containerName)
+	metadataDir := generateMetadataDir(containerName)
 	if err = util.EnsureDirectory(metadataDir); err != nil {
 		logrus.Errorf("failed to ensure metadata directory %v: %v", metadataDir, err)
 	}
@@ -98,7 +98,7 @@ func SaveMetadata(metadata *Metadata) error {
 
 // RemoveMetadata 在容器退出时，把元数据删除
 func RemoveMetadata(containerName string) error {
-	metadataDir := medataDir(containerName)
+	metadataDir := generateMetadataDir(containerName)
 	if err := os.RemoveAll(metadataDir); err != nil {
 		logrus.Errorf("failed to remove metadata directory (%v): %v", metadataDir, err)
 		return err
@@ -108,7 +108,7 @@ func RemoveMetadata(containerName string) error {
 
 // CreateLogFile 创建日志文件
 func CreateLogFile(containerName string) (*os.File, error) {
-	metadataDir := medataDir(containerName)
+	metadataDir := generateMetadataDir(containerName)
 	if err := util.EnsureDirectory(metadataDir); err != nil {
 		logrus.Errorf("failed to ensure metadata directory %v: %v", metadataDir, err)
 	}
@@ -121,7 +121,7 @@ func CreateLogFile(containerName string) (*os.File, error) {
 	return file, err
 }
 
-func medataDir(containerName string) string {
+func generateMetadataDir(containerName string) string {
 	if len(containerName) == 0 {
 		containerName = defaultContainerDir
 	}
@@ -129,9 +129,9 @@ func medataDir(containerName string) string {
 }
 
 func generateConfigPath(containerName string) string {
-	return path.Join(medataDir(containerName), configName)
+	return path.Join(generateMetadataDir(containerName), configName)
 }
 
 func generateLogPath(containerName string) string {
-	return path.Join(medataDir(containerName), logName)
+	return path.Join(generateMetadataDir(containerName), logName)
 }

@@ -179,6 +179,27 @@ func StopContainer(containerName string) error {
 	return nil
 }
 
+// RemoveContainer 删除当前容器的信息
+func RemoveContainer(containerName string) error {
+	metadata, err := ReadMetadata(containerName)
+	if err != nil {
+		logrus.Errorf("failed to read metadata of %v: %v", containerName, err)
+		return err
+	}
+
+	if metadata.Status != StatusStopped {
+		logrus.Warningf("please stop contaienr %v first", containerName)
+		return fmt.Errorf("please stop contaienr %v first", containerName)
+	}
+
+	metadataDir := generateMetadataDir(containerName)
+	if err = os.RemoveAll(metadataDir); err != nil {
+		logrus.Errorf("failed to remove metadata directory %v: %v", metadataDir, err)
+		return err
+	}
+	return nil
+}
+
 func newPipe() (*os.File, *os.File, error) {
 	readPipe, writePipe, err := os.Pipe()
 	if err != nil {
