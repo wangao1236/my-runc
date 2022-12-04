@@ -86,8 +86,7 @@ func Run(tty, detach bool, containerName string, imageTar, volume string, args [
 		logrus.Fatalf("failed to get current directory: %v", err)
 	}
 	var writeLayer, workLayer, workspace string
-	writeLayer, workLayer, workspace, err = layer.CreateWorkspace(rootDir, imageTar,
-		".read", ".write", ".work", ".merge", volume)
+	writeLayer, workLayer, workspace, err = layer.CreateWorkspace(rootDir, imageTar, containerName, volume)
 	if err != nil {
 		logrus.Fatalf("failed to create workspace: %v", err)
 	}
@@ -123,7 +122,7 @@ func Run(tty, detach bool, containerName string, imageTar, volume string, args [
 		logrus.Fatalf("parent process failed to start: %v", err)
 	}
 
-	if err = container.CreateMetadata(parent.Process.Pid, args, containerName); err != nil {
+	if err = container.CreateMetadata(parent.Process.Pid, args, containerName, volume); err != nil {
 		logrus.Fatalf("failed to record metadata of container (%v): %v", containerName, err)
 	}
 	defer func() {

@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/sirupsen/logrus"
+	"github.com/wangao1236/my-docker/pkg/layer"
 	"github.com/wangao1236/my-docker/pkg/util"
 )
 
@@ -90,13 +91,13 @@ func RunContainerInitProcess() error {
 	return nil
 }
 
-func CommitContainer(imageName string) error {
+func CommitContainer(containerName string) error {
 	rootDir, err := os.Getwd()
 	if err != nil {
 		logrus.Fatalf("failed to get current directory: %v", err)
 	}
-	workspace := path.Join(rootDir, ".merge")
-	imageTar := path.Join(rootDir, imageName)
+	workspace := layer.GenerateWorkSpaceDir(rootDir, containerName)
+	imageTar := layer.GenerateImageTarPath(rootDir, containerName)
 	logrus.Infof("try to commit image to %v", imageTar)
 	if _, err = exec.Command("tar", "-czf", imageTar, "-C", workspace, ".").CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to commit image to %v: %v", workspace, err)
@@ -192,6 +193,15 @@ func RemoveContainer(containerName string) error {
 		return fmt.Errorf("please stop contaienr %v first", containerName)
 	}
 
+	var rootDir string
+	rootDir, err = os.Getwd()
+	if err != nil {
+		logrus.Fatalf("failed to get current directory: %v", err)
+	}
+	workspace := layer.GenerateWorkSpaceDir(rootDir, containerName)
+	workLayer := layer.GenerateWorkDir(rootDir, containerName)
+	writeLayer := layer.GenerateWriteDir(rootDir, containerName)
+	layer.DeleteWorkspace(workspace, workLayer, writeLayer, metadata.Volume)
 	metadataDir := generateMetadataDir(containerName)
 	if err = os.RemoveAll(metadataDir); err != nil {
 		logrus.Errorf("failed to remove metadata directory %v: %v", metadataDir, err)

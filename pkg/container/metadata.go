@@ -37,10 +37,11 @@ type Metadata struct {
 	Command    string    `json:"command"`
 	CreateTime time.Time `json:"createTime"`
 	Status     string    `json:"status"`
+	Volume     string    `json:"volume"`
 }
 
 // CreateMetadata 在容器创建时，将元数据存入配置文件中
-func CreateMetadata(pid int, args []string, containerName string) error {
+func CreateMetadata(pid int, args []string, containerName, volume string) error {
 	return SaveMetadata(&Metadata{
 		PID:        pid,
 		ID:         util.RandomString(10),
@@ -48,6 +49,7 @@ func CreateMetadata(pid int, args []string, containerName string) error {
 		Command:    strings.Join(args, " "),
 		CreateTime: time.Now(),
 		Status:     StatusRunning,
+		Volume:     volume,
 	})
 }
 
