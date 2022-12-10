@@ -40,6 +40,15 @@ func ExecContainer(containerName string, args []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	var envs []string
+	envs, err = GetEnvsOfContainer(containerName)
+	if err != nil {
+		logrus.Errorf("failed to get environment variables of container %v: %v", containerName, err)
+		return err
+	}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	cmd.Env = append(cmd.Env, envs...)
 	if err = cmd.Run(); err != nil {
 		logrus.Errorf("failed to exec container %v with %+v: %v", containerName, args, err)
 		return err

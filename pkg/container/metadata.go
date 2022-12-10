@@ -2,6 +2,7 @@ package container
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -123,6 +124,24 @@ func CreateLogFile(containerName string) (*os.File, error) {
 	return file, err
 }
 
+// GetEnvsOfContainer 返回容器内的环境变量
+func GetEnvsOfContainer(containerName string) ([]string, error) {
+	metadata, err := ReadMetadata(containerName)
+	if err != nil {
+		logrus.Errorf("failed to read metadata of container %v: %v", containerName, err)
+		return nil, err
+	}
+
+	var body []byte
+	environPath := generateEnvironPath(metadata.PID)
+	body, err = ioutil.ReadFile(environPath)
+	if err != nil {
+		logrus.Errorf("failed to read content of %v: %v", environPath, err)
+		return nil, err
+	}
+	return strings.Split(string(body), "\u0000"), nil
+}
+
 func generateMetadataDir(containerName string) string {
 	if len(containerName) == 0 {
 		containerName = defaultContainerDir
@@ -136,4 +155,8 @@ func generateConfigPath(containerName string) string {
 
 func generateLogPath(containerName string) string {
 	return path.Join(generateMetadataDir(containerName), logName)
+}
+
+func generateEnvironPath(pid int) string {
+	return fmt.Sprintf("/proc/%v/environ", pid)
 }

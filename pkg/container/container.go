@@ -20,7 +20,7 @@ import (
 // 1. 调用 /proc/self/exe，使用这种方式对创造出来的进程进行初始化，并隔离新的 namespace 中执行
 // 2. 其中 init 是传递给本进程的第一个参数，表示 fork 出的进程会执行我们的 init 命令
 // 3. 如果用户指定了 -it 参数，就需要把当前进程的输入输出导入到标准输入输出上
-func NewParentProcess(tty bool, workspace, containerName string) (*exec.Cmd, *os.File, error) {
+func NewParentProcess(tty bool, workspace, containerName string, envs []string) (*exec.Cmd, *os.File, error) {
 	readPipe, writePipe, err := newPipe()
 	if err != nil {
 		return nil, nil, err
@@ -46,6 +46,9 @@ func NewParentProcess(tty bool, workspace, containerName string) (*exec.Cmd, *os
 	cmd.Dir = workspace
 	// 将管道的一端传入 fork 的进程中
 	cmd.ExtraFiles = []*os.File{readPipe}
+	// 在容器进程内设置环境变量
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	cmd.Env = append(cmd.Env, envs...)
 	return cmd, writePipe, nil
 }
 
