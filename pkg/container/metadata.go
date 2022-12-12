@@ -18,7 +18,7 @@ const (
 	StatusStopped = "stopped"
 	StatusExited  = "exited"
 
-	DefaultMetadataRootDir = "/var/run/my-docker"
+	DefaultMetadataRootDir = "/var/run/my-docker/containers"
 	defaultContainerDir    = "default"
 	configName             = "config.json"
 	logName                = "container.log"
@@ -26,7 +26,7 @@ const (
 
 func init() {
 	if err := util.EnsureDirectory(DefaultMetadataRootDir); err != nil {
-		logrus.Fatalf("faile to ensure metadata root diectory %v: %v", DefaultMetadataRootDir, err)
+		logrus.Warningf("faile to ensure metadata root diectory %v: %v", DefaultMetadataRootDir, err)
 	}
 }
 
