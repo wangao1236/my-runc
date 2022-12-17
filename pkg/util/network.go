@@ -8,6 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 )
 
 // EnsureBridgeInterface 检查 bridge 接口是否存在，不存在则创建。
@@ -95,5 +96,15 @@ func SetInterfaceUp(name string) error {
 		logrus.Errorf("failed to execute `ip link set %v uo`: %v", name, err)
 		return err
 	}
+	return nil
+}
+
+// EnterNetns 设置当前进程进入某一个 netns
+func EnterNetns(nsFD int) error {
+	if err := netns.Set(netns.NsHandle(nsFD)); err != nil {
+		logrus.Errorf("failed to setns (%v): %v", nsFD, err)
+		return err
+	}
+	logrus.Infof("succeeded in executing `setns %v`", nsFD)
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"os/exec"
 
 	"github.com/sirupsen/logrus"
+	"github.com/vishvananda/netlink"
+	"github.com/wangao1236/my-docker/pkg/types"
 	"github.com/wangao1236/my-docker/pkg/util"
 )
 
@@ -30,8 +32,8 @@ type Driver interface {
 	Name() string
 	CreateNetwork(networkName, subnet string) (*Network, error)
 	DeleteNetwork(network *Network) error
-	Connect(network *Network, endpoint *Endpoint) error
-	Disconnect(network *Network, endpoint *Endpoint) error
+	Connect(network *Network, endpoint *types.Endpoint) error
+	Disconnect(network *Network, endpoint *types.Endpoint) error
 }
 
 type bridgeDriver struct {
@@ -94,11 +96,39 @@ func (bd *bridgeDriver) DeleteNetwork(network *Network) error {
 	return nil
 }
 
-func (bd *bridgeDriver) Connect(network *Network, endpoint *Endpoint) error {
-	panic("implement me")
+func (bd *bridgeDriver) Connect(network *Network, endpoint *types.Endpoint) error {
+	br, err := netlink.LinkByName(network.Name)
+	if err != nil {
+		logrus.Errorf("failed to get interface (%v): %v", network.Name, err)
+		return err
+	}
+
+	// 创建 veth pair 的配置
+	la := netlink.NewLinkAttrs()
+	la.Name = endpoint.ID[:5]
+	// 相当于执行 `ip link set dev ${peer-name} master ${bridge-name}`，将 veth pair 的 peer 端插在 bridge 上
+	la.MasterIndex = br.Attrs().Index
+	// 初始化 veth pair 设备的基本配置
+	endpoint.Device = &netlink.Veth{
+		LinkAttrs: la,
+		PeerName:  generateVethPairPeerName(la.Name),
+	}
+
+	if err = netlink.LinkAdd(endpoint.Device); err != nil {
+		logrus.Errorf("failed to add veth pair (%v/%v): %v", endpoint.Device.Name, endpoint.Device.PeerName, err)
+		return err
+	}
+	logrus.Infof("succeed in adding veth pair (%v/%v)", endpoint.Device.Name, endpoint.Device.PeerName)
+
+	if err = netlink.LinkSetUp(endpoint.Device); err != nil {
+		logrus.Errorf("failed to set up veth pair (%v/%v): %v", endpoint.Device.Name, endpoint.Device.PeerName, err)
+		return err
+	}
+	logrus.Infof("succeed in setting up veth pair (%v/%v)", endpoint.Device.Name, endpoint.Device.PeerName)
+	return nil
 }
 
-func (bd *bridgeDriver) Disconnect(network *Network, endpoint *Endpoint) error {
+func (bd *bridgeDriver) Disconnect(network *Network, endpoint *types.Endpoint) error {
 	panic("implement me")
 }
 
@@ -152,4 +182,8 @@ func (bd *bridgeDriver) clearInterfaceIPTables(name string, subnet *net.IPNet) e
 		return err
 	}
 	return nil
+}
+
+func generateVethPairPeerName(vethPairName string) string {
+	return "vp-" + vethPairName
 }

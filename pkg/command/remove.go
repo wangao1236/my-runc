@@ -3,8 +3,10 @@ package command
 import (
 	"fmt"
 
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"github.com/wangao1236/my-docker/pkg/container"
+	"github.com/wangao1236/my-docker/pkg/network"
 )
 
 var RemoveCommand = cli.Command{
@@ -14,6 +16,16 @@ var RemoveCommand = cli.Command{
 		if len(ctx.Args()) < 1 {
 			return fmt.Errorf("missing container name")
 		}
-		return container.RemoveContainer(ctx.Args().Get(0))
+		containerName := ctx.Args().Get(0)
+		metadata, err := container.ReadMetadata(containerName)
+		if err != nil {
+			logrus.Errorf("failed to read metadata of %v: %v", containerName, err)
+			return err
+		}
+		if err = network.Disconnect(metadata); err != nil {
+			logrus.Errorf("failed to disconnect network for container (%v): %v", metadata, err)
+			return err
+		}
+		return container.RemoveContainer(metadata)
 	},
 }

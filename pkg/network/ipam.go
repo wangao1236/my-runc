@@ -59,7 +59,7 @@ func (ipam *IPAM) Allocate(subnet *net.IPNet) (ip net.IP, err error) {
 
 	ipNet := []byte(ipam.Subnets[key])
 	allocatedIP := make([]byte, 4)
-	copy(allocatedIP, subnet.IP)
+	copy(allocatedIP, subnet.IP.To4())
 	for idx := range ipNet {
 		if ipNet[idx] == '1' {
 			continue
@@ -112,6 +112,32 @@ func (ipam *IPAM) Release(subnet *net.IPNet, ip net.IP) (err error) {
 	}
 	ipNet[target-base-1] = '0'
 	ipam.Subnets[key] = string(ipNet)
+	return
+}
+
+func (ipam *IPAM) Remove(subnet *net.IPNet) (err error) {
+	if ipam.save {
+		var subnets map[string]string
+		if subnets, err = readSubnets(); err != nil {
+			logrus.Errorf("failed to read subnets: %v", err)
+			return
+		}
+		logrus.Info("succeeded in reading subnets")
+		ipam.Subnets = subnets
+		defer func() {
+			if err == nil {
+				if saveErr := saveSubnets(ipam.Subnets); saveErr != nil {
+					logrus.Warningf("failed to save subnets: %v", saveErr)
+				} else {
+					logrus.Info("succeeded in saving subnets")
+				}
+			} else {
+				logrus.Errorf("can not save subnets for error: %v", err)
+			}
+		}()
+	}
+
+	delete(ipam.Subnets, subnet.String())
 	return
 }
 

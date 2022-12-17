@@ -133,10 +133,11 @@ func ListContainers() error {
 	})
 
 	w := tabwriter.NewWriter(os.Stdout, 12, 1, 3, ' ', 0)
-	_, _ = fmt.Fprint(w, "ID\tNAME\tPID\tSTATUS\tCOMMAND\tCREATED\n")
+	_, _ = fmt.Fprint(w, "ID\tNAME\tPID\tSTATUS\tCOMMAND\tCREATED\tIP\n")
 	for _, ctn := range containers {
-		_, _ = fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\n", ctn.ID, ctn.Name, ctn.PID, ctn.Status, ctn.Command,
-			ctn.CreateTime)
+		ipNets := ctn.GetIPNets()
+		_, _ = fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\t%v\t%v\n", ctn.ID, ctn.Name, ctn.PID, ctn.Status, ctn.Command,
+			ctn.CreateTime, ipNets)
 	}
 	if err = w.Flush(); err != nil {
 		return fmt.Errorf("flush ps write err: %v", err)
@@ -184,20 +185,14 @@ func StopContainer(containerName string) error {
 }
 
 // RemoveContainer 删除当前容器的信息
-func RemoveContainer(containerName string) error {
-	metadata, err := ReadMetadata(containerName)
-	if err != nil {
-		logrus.Errorf("failed to read metadata of %v: %v", containerName, err)
-		return err
-	}
-
+func RemoveContainer(metadata *Metadata) error {
+	containerName := metadata.Name
 	if metadata.Status != StatusStopped {
 		logrus.Warningf("please stop contaienr %v first", containerName)
 		return fmt.Errorf("please stop contaienr %v first", containerName)
 	}
 
-	var rootDir string
-	rootDir, err = os.Getwd()
+	rootDir, err := os.Getwd()
 	if err != nil {
 		logrus.Fatalf("failed to get current directory: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/wangao1236/my-docker/pkg/cgroup"
 	"github.com/wangao1236/my-docker/pkg/container"
 	"github.com/wangao1236/my-docker/pkg/layer"
+	"github.com/wangao1236/my-docker/pkg/network"
 )
 
 var RunCommand = cli.Command{
@@ -55,6 +56,10 @@ var RunCommand = cli.Command{
 			Name:  "e",
 			Usage: "Environment variables in containers",
 		},
+		cli.StringSliceFlag{
+			Name:  "network",
+			Usage: "Network name used by containers",
+		},
 	},
 
 	// 这里是 run 命令执行的真正函数：
@@ -71,9 +76,10 @@ var RunCommand = cli.Command{
 		imageTar := ctx.String("image-tar")
 		volume := ctx.String("v")
 		envs := ctx.StringSlice("e")
+		networkName := ctx.String("network")
 		logrus.Infof("run args: %+v, container name: %v, enable tty: %v, detach: %v, environment variables: %+v",
 			ctx.Args(), containerName, tty, detach, envs)
-		Run(tty, detach, containerName, imageTar, volume, envs, ctx.Args(), &cgroup.ResourceConfig{
+		Run(tty, detach, containerName, imageTar, volume, networkName, envs, ctx.Args(), &cgroup.ResourceConfig{
 			MemoryLimit: ctx.String("mem"),
 			CPUShare:    ctx.String("cpu-share"),
 			CPUSet:      ctx.String("cpu-set"),
@@ -85,7 +91,7 @@ var RunCommand = cli.Command{
 // Run fork 出当前进程，执行 init 命令。
 // 它首先会 clone 出来一批 namespace 隔离的进程，然后在子进程中，调用 /proc/self/exe，也就是自己调用自己。
 // 发送 init 参数，调用我们写的 init 方法，去初始化容器的一些资源
-func Run(tty, detach bool, containerName string, imageTar, volume string, envs, args []string,
+func Run(tty, detach bool, containerName string, imageTar, volume, networkName string, envs, args []string,
 	res *cgroup.ResourceConfig) {
 	rootDir, err := os.Getwd()
 	if err != nil {
@@ -143,6 +149,27 @@ func Run(tty, detach bool, containerName string, imageTar, volume string, envs, 
 		logrus.Fatalf("failed to apply pid (%v) of parent process to cgroups; %v", parent.Process.Pid, err)
 	}
 	logrus.Infof("applied pid (%v) of parent process to cgroups successfully", parent.Process.Pid)
+
+	if len(networkName) > 0 {
+		var metadata *container.Metadata
+		metadata, err = container.ReadMetadata(containerName)
+		if err != nil {
+			logrus.Fatalf("failed to get metadata of container (%v) for setting contaienr network: %v",
+				containerName, err)
+			return
+		}
+		if err = network.Connect(networkName, metadata); err != nil {
+			logrus.Fatalf("failed to connect network (%v) for container (%v): %v", networkName, metadata, err)
+		}
+		logrus.Infof("succeeded in connecting network (%v) for container (%v)", networkName, metadata.Name)
+		defer func() {
+			if !detach {
+				if err = network.Disconnect(metadata); err != nil {
+					logrus.Warningf("failed to disconnect network for container (%v): %v", metadata, err)
+				}
+			}
+		}()
+	}
 
 	sendInitArgs(args, writePipe)
 

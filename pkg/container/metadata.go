@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/wangao1236/my-docker/pkg/types"
 	"github.com/wangao1236/my-docker/pkg/util"
 )
 
@@ -32,13 +33,35 @@ func init() {
 
 // Metadata 表示容器元数据
 type Metadata struct {
-	PID        int       `json:"pid"`
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Command    string    `json:"command"`
-	CreateTime time.Time `json:"createTime"`
-	Status     string    `json:"status"`
-	Volume     string    `json:"volume"`
+	PID        int               `json:"pid"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Command    string            `json:"command"`
+	CreateTime time.Time         `json:"createTime"`
+	Status     string            `json:"status"`
+	Volume     string            `json:"volume"`
+	Endpoints  []*types.Endpoint `json:"endpoints"`
+}
+
+func (m *Metadata) String() string {
+	body, _ := json.Marshal(m)
+	return string(body)
+}
+
+// GetIPNets 返回容器的 ip 地址，如果未设置，返回 "null"
+func (m *Metadata) GetIPNets() string {
+	var ipNets []string
+	for i := range m.Endpoints {
+		ipNet := m.Endpoints[i].GetIPNet()
+		if ipNet == nil {
+			continue
+		}
+		ipNets = append(ipNets, ipNet.String())
+	}
+	if len(ipNets) > 0 {
+		return strings.Join(ipNets, ";")
+	}
+	return "null"
 }
 
 // CreateMetadata 在容器创建时，将元数据存入配置文件中
