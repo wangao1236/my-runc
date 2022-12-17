@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	_ "github.com/wangao1236/my-docker/pkg/nsenter"
+	_ "github.com/wangao1236/my-runc/pkg/nsenter"
 )
 
 const (

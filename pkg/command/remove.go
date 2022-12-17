@@ -5,8 +5,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"github.com/wangao1236/my-docker/pkg/container"
-	"github.com/wangao1236/my-docker/pkg/network"
+	"github.com/wangao1236/my-runc/pkg/container"
+	"github.com/wangao1236/my-runc/pkg/network"
 )
 
 var RemoveCommand = cli.Command{

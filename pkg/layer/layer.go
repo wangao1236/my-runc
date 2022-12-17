@@ -9,10 +9,10 @@ import (
 	"syscall"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wangao1236/my-docker/pkg/util"
+	"github.com/wangao1236/my-runc/pkg/util"
 )
 
-func CreateWorkspace(rootDir, imageTar, containerName, volume string) (
+func CreateWorkspace(rootDir, imageTar, containerName string, volumes []string) (
 	writeLayer, workLayer, workspace string, err error) {
 	var readonlyPath string
 	readonlyPath, err = createReadonlyLayer(rootDir, imageTar)
@@ -39,15 +39,15 @@ func CreateWorkspace(rootDir, imageTar, containerName, volume string) (
 		return "", "", "", err
 	}
 
-	if err = mountVolume(workspace, volume); err != nil {
-		logrus.Errorf("failed to mount volume %v: %v", volume, err)
+	if err = mountVolumes(workspace, volumes); err != nil {
+		logrus.Errorf("failed to mount volumes (%+v): %v", volumes, err)
 		return "", "", "", err
 	}
 	return
 }
 
-func DeleteWorkspace(workspace, workLayer, writeLayer, volume string) {
-	umountVolume(workspace, volume)
+func DeleteWorkspace(workspace, workLayer, writeLayer string, volumes []string) {
+	umountVolumes(workspace, volumes)
 	cmd := exec.Command("umount", workspace)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -118,6 +118,19 @@ func createWorkspace(rootDir, containerName, lowerPath, upperPath, workPath stri
 	return targetPath, nil
 }
 
+func mountVolumes(workspace string, volumes []string) error {
+	var errs []error
+	for _, v := range volumes {
+		if err := mountVolume(workspace, v); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to mount volumes: %+v", errs)
+	}
+	return nil
+}
+
 func mountVolume(workspace, volume string) error {
 	if len(volume) == 0 {
 		return nil
@@ -145,6 +158,12 @@ func mountVolume(workspace, volume string) error {
 		logrus.Errorf("failed to mount %v to %v: %v", hostPath, inContainerPath, err)
 	}
 	return err
+}
+
+func umountVolumes(workspace string, volumes []string) {
+	for _, v := range volumes {
+		umountVolume(workspace, v)
+	}
 }
 
 func umountVolume(workspace, volume string) {

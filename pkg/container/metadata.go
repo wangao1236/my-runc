@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wangao1236/my-docker/pkg/types"
-	"github.com/wangao1236/my-docker/pkg/util"
+	"github.com/wangao1236/my-runc/pkg/types"
+	"github.com/wangao1236/my-runc/pkg/util"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 	StatusStopped = "stopped"
 	StatusExited  = "exited"
 
-	DefaultMetadataRootDir = "/var/run/my-docker/containers"
+	DefaultMetadataRootDir = "/var/run/my-runc/containers"
 	defaultContainerDir    = "default"
 	configName             = "config.json"
 	logName                = "container.log"
@@ -33,14 +33,15 @@ func init() {
 
 // Metadata 表示容器元数据
 type Metadata struct {
-	PID        int               `json:"pid"`
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Command    string            `json:"command"`
-	CreateTime time.Time         `json:"createTime"`
-	Status     string            `json:"status"`
-	Volume     string            `json:"volume"`
-	Endpoints  []*types.Endpoint `json:"endpoints"`
+	PID          int               `json:"pid"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Command      string            `json:"command"`
+	CreateTime   time.Time         `json:"createTime"`
+	Status       string            `json:"status"`
+	Volumes      []string          `json:"volumes"`
+	Endpoints    []*types.Endpoint `json:"endpoints"`
+	PortMappings map[int]int       `json:"portMappings"`
 }
 
 func (m *Metadata) String() string {
@@ -65,7 +66,7 @@ func (m *Metadata) GetIPNets() string {
 }
 
 // CreateMetadata 在容器创建时，将元数据存入配置文件中
-func CreateMetadata(pid int, args []string, containerName, volume string) error {
+func CreateMetadata(pid int, args []string, containerName string, volumes []string) error {
 	return SaveMetadata(&Metadata{
 		PID:        pid,
 		ID:         util.RandomString(10),
@@ -73,7 +74,7 @@ func CreateMetadata(pid int, args []string, containerName, volume string) error 
 		Command:    strings.Join(args, " "),
 		CreateTime: time.Now(),
 		Status:     StatusRunning,
-		Volume:     volume,
+		Volumes:    volumes,
 	})
 }
 

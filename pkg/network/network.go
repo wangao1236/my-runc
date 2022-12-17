@@ -6,21 +6,23 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"path"
 	"runtime"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
-	"github.com/wangao1236/my-docker/pkg/container"
-	"github.com/wangao1236/my-docker/pkg/types"
-	"github.com/wangao1236/my-docker/pkg/util"
+	"github.com/wangao1236/my-runc/pkg/container"
+	"github.com/wangao1236/my-runc/pkg/types"
+	"github.com/wangao1236/my-runc/pkg/util"
 )
 
 const (
-	DefaultNetworkRootDir = "/var/run/my-docker/network"
+	DefaultNetworkRootDir = "/var/run/my-runc/network"
 	DefaultNetworkDir     = DefaultNetworkRootDir + "/networks"
 )
 
@@ -134,7 +136,7 @@ func DeleteNetwork(name string) error {
 	return nil
 }
 
-func Connect(networkName string, metadata *container.Metadata) error {
+func Connect(networkName string, portMappings map[int]int, metadata *container.Metadata) error {
 	network, err := readNetwork(networkName)
 	if err != nil {
 		logrus.Errorf("failed to get network (%v): %v", networkName, err)
@@ -171,8 +173,16 @@ func Connect(networkName string, metadata *container.Metadata) error {
 	}
 	logrus.Infof("succeeded in connecting %v", network.Name)
 
+	if err = setPortMappingIPTables(endpoint, portMappings); err != nil {
+		logrus.Errorf("failed to set port mapping iptables (%+v) for container (%v): %v", portMappings, metadata, err)
+		return err
+	}
+	logrus.Infof("succeeded in setting port mappings: %+v", portMappings)
+	metadata.PortMappings = portMappings
+
 	if err = setContainerNetwork(endpoint, metadata); err != nil {
 		logrus.Errorf("failed to set network for container (%v): %v", metadata, err)
+		clearPortMappingIPTables(endpoint, portMappings)
 		return err
 	}
 	logrus.Infof("succeeded in setting network for container (%v)->(%v)", metadata, network)
@@ -194,6 +204,7 @@ func Disconnect(metadata *container.Metadata) error {
 		} else {
 			metadata.Endpoints[i] = nil
 		}
+		clearPortMappingIPTables(ep, metadata.PortMappings)
 	}
 	if len(errs) > 0 {
 		logrus.Errorf("failed to disconnect endpoints in container (%v): %+v", metadata, errs)
@@ -221,6 +232,41 @@ func disconnectEndpoint(endpoint *types.Endpoint) error {
 		return err
 	}
 	return nil
+}
+
+func setPortMappingIPTables(endpoint *types.Endpoint, portMappings map[int]int) error {
+	ipTableArgsFmt := "-t nat -A PREROUTING -p tcp --dport %v -j DNAT --to-destination %v:%v -m comment --comment my-runc"
+	var addedArgs [][]string
+	for hostPort, containerPort := range portMappings {
+		rule := fmt.Sprintf(ipTableArgsFmt, hostPort, endpoint.IP, containerPort)
+		args := strings.Split(rule, " ")
+		cmd := exec.Command("iptables", args...)
+		if output, err := cmd.Output(); err != nil {
+			logrus.Errorf("failed to set iptables (%+v), output (%v): %v", args, string(output), err)
+			for i := range addedArgs {
+				addedArgs[i][2] = "-D"
+				if output, err = exec.Command("iptables", addedArgs[i]...).Output(); err != nil {
+					logrus.Errorf("failed to clear added iptables (%+v), output (%v): %v",
+						addedArgs[i], string(output), err)
+				}
+			}
+			return err
+		}
+		logrus.Infof("succeeded in setting iptables rule: %v", rule)
+		addedArgs = append(addedArgs, args)
+	}
+	return nil
+}
+
+func clearPortMappingIPTables(endpoint *types.Endpoint, portMappings map[int]int) {
+	ipTableArgsFmt := "-t nat -D PREROUTING -p tcp --dport %v -j DNAT --to-destination %v:%v -m comment --comment my-runc"
+	for hostPort, containerPort := range portMappings {
+		args := strings.Split(fmt.Sprintf(ipTableArgsFmt, hostPort, endpoint.IP, containerPort), " ")
+		cmd := exec.Command("iptables", args...)
+		if output, err := cmd.Output(); err != nil {
+			logrus.Warningf("failed to set iptables (%+v), output (%v): %v", args, string(output), err)
+		}
+	}
 }
 
 func setContainerNetwork(endpoint *types.Endpoint, metadata *container.Metadata) error {

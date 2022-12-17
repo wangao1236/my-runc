@@ -12,8 +12,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wangao1236/my-docker/pkg/layer"
-	"github.com/wangao1236/my-docker/pkg/util"
+	"github.com/wangao1236/my-runc/pkg/layer"
+	"github.com/wangao1236/my-runc/pkg/util"
 )
 
 // NewParentProcess 构造出一个 command：
@@ -169,7 +169,7 @@ func StopContainer(containerName string) error {
 	}
 
 	pid := metadata.PID
-	if err = syscall.Kill(pid, syscall.SIGTERM); err != nil {
+	if err = syscall.Kill(pid, syscall.SIGTERM); err != nil && err.Error() != "no such process" {
 		logrus.Errorf("failed to kill -TERM %v: %v", pid, err)
 		return err
 	}
@@ -199,7 +199,7 @@ func RemoveContainer(metadata *Metadata) error {
 	workspace := layer.GenerateWorkSpaceDir(rootDir, containerName)
 	workLayer := layer.GenerateWorkDir(rootDir, containerName)
 	writeLayer := layer.GenerateWriteDir(rootDir, containerName)
-	layer.DeleteWorkspace(workspace, workLayer, writeLayer, metadata.Volume)
+	layer.DeleteWorkspace(workspace, workLayer, writeLayer, metadata.Volumes)
 	metadataDir := generateMetadataDir(containerName)
 	if err = os.RemoveAll(metadataDir); err != nil {
 		logrus.Errorf("failed to remove metadata directory %v: %v", metadataDir, err)

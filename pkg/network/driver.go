@@ -6,8 +6,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
-	"github.com/wangao1236/my-docker/pkg/types"
-	"github.com/wangao1236/my-docker/pkg/util"
+	"github.com/wangao1236/my-runc/pkg/types"
+	"github.com/wangao1236/my-runc/pkg/util"
 )
 
 const (
@@ -162,6 +162,7 @@ func (bd *bridgeDriver) setInterfaceIPTables(name string, subnet *net.IPNet) err
 	args := []string{
 		"-t", "nat", "-A", "POSTROUTING",
 		"-s", subnet.String(), "!", "-o", name, "-j", "MASQUERADE",
+		"-m", "comment", "--comment", "my-runc",
 	}
 	cmd := exec.Command("iptables", args...)
 	if output, err := cmd.Output(); err != nil {
@@ -175,6 +176,7 @@ func (bd *bridgeDriver) clearInterfaceIPTables(name string, subnet *net.IPNet) e
 	args := []string{
 		"-t", "nat", "-D", "POSTROUTING",
 		"-s", subnet.String(), "!", "-o", name, "-j", "MASQUERADE",
+		"-m", "comment", "--comment", "my-runc",
 	}
 	cmd := exec.Command("iptables", args...)
 	if output, err := cmd.Output(); err != nil {

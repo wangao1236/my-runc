@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	"github.com/sirupsen/logrus"
-	"github.com/wangao1236/my-docker/pkg/util"
+	"github.com/wangao1236/my-runc/pkg/util"
 )
 
 var _ Subsystem = &MemorySubsystem{}
@@ -39,7 +39,7 @@ func (s *MemorySubsystem) Set(cgroupName string, res *ResourceConfig) error {
 }
 
 func (s MemorySubsystem) Apply(cgroupName string, pid int) error {
-	// 获取自定义 Cgroup 的路径，没有则创建，如：/sys/fs/cgroup/memory/my-docker-cgroup
+	// 获取自定义 Cgroup 的路径，没有则创建，如：/sys/fs/cgroup/memory/my-runc-cgroup
 	cgroupPath, err := util.GetCgroupPath(s.Name(), cgroupName)
 	if err != nil {
 		logrus.Infof("failed to get path of cgroup (%v) in (%v): %v", cgroupName, s.Name(), err)
@@ -57,7 +57,7 @@ func (s MemorySubsystem) Apply(cgroupName string, pid int) error {
 }
 
 func (s *MemorySubsystem) Remove(cgroupName string) error {
-	// 获取自定义 Cgroup 的路径，没有则创建，如：/sys/fs/cgroup/memory/my-docker-cgroup
+	// 获取自定义 Cgroup 的路径，没有则创建，如：/sys/fs/cgroup/memory/my-runc-cgroup
 	cgroupPath, err := util.GetCgroupPath(s.Name(), cgroupName)
 	if err != nil {
 		logrus.Errorf("failed to get path of cgroup (%v) in (%v): %v", cgroupName, s.Name(), err)

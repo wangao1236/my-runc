@@ -3,7 +3,7 @@ package command
 import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"github.com/wangao1236/my-docker/pkg/container"
+	"github.com/wangao1236/my-runc/pkg/container"
 )
 
 var InitCommand = cli.Command{

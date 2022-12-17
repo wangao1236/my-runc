@@ -4,19 +4,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"github.com/wangao1236/my-docker/pkg/cgroup"
-	"github.com/wangao1236/my-docker/pkg/container"
-	"github.com/wangao1236/my-docker/pkg/layer"
-	"github.com/wangao1236/my-docker/pkg/network"
+	"github.com/wangao1236/my-runc/pkg/cgroup"
+	"github.com/wangao1236/my-runc/pkg/container"
+	"github.com/wangao1236/my-runc/pkg/layer"
+	"github.com/wangao1236/my-runc/pkg/network"
 )
 
 var RunCommand = cli.Command{
 	Name:  "run",
-	Usage: `Create a container with namespace and cgroups limit my-docker run -ti [command]`,
+	Usage: `Create a container with namespace and cgroups limit my-runc run -ti [command]`,
 	Flags: []cli.Flag{
 		cli.BoolFlag{
 			Name:  "it",
@@ -40,7 +41,7 @@ var RunCommand = cli.Command{
 			Value: "busybox.tar",
 			Usage: "Image tar file name",
 		},
-		cli.StringFlag{
+		cli.StringSliceFlag{
 			Name:  "v",
 			Usage: "Volume",
 		},
@@ -56,9 +57,13 @@ var RunCommand = cli.Command{
 			Name:  "e",
 			Usage: "Environment variables in containers",
 		},
-		cli.StringSliceFlag{
+		cli.StringFlag{
 			Name:  "network",
 			Usage: "Network name used by containers",
+		},
+		cli.StringSliceFlag{
+			Name:  "p",
+			Usage: "Port mapping of containers",
 		},
 	},
 
@@ -70,20 +75,26 @@ var RunCommand = cli.Command{
 		if len(ctx.Args()) < 1 {
 			return fmt.Errorf("missing container command")
 		}
+		portMappings, err := parsePortMappings(ctx.StringSlice("p"))
+		if err != nil {
+			return fmt.Errorf("invalid port mappings: %v", err)
+		}
 		tty := ctx.Bool("it")
 		detach := ctx.Bool("d")
 		containerName := ctx.String("name")
 		imageTar := ctx.String("image-tar")
-		volume := ctx.String("v")
 		envs := ctx.StringSlice("e")
+		args := ctx.Args()
+		volumes := ctx.StringSlice("v")
 		networkName := ctx.String("network")
 		logrus.Infof("run args: %+v, container name: %v, enable tty: %v, detach: %v, environment variables: %+v",
-			ctx.Args(), containerName, tty, detach, envs)
-		Run(tty, detach, containerName, imageTar, volume, networkName, envs, ctx.Args(), &cgroup.ResourceConfig{
-			MemoryLimit: ctx.String("mem"),
-			CPUShare:    ctx.String("cpu-share"),
-			CPUSet:      ctx.String("cpu-set"),
-		})
+			args, containerName, tty, detach, envs)
+		Run(tty, detach, containerName, imageTar, networkName, envs, args, volumes, portMappings,
+			&cgroup.ResourceConfig{
+				MemoryLimit: ctx.String("mem"),
+				CPUShare:    ctx.String("cpu-share"),
+				CPUSet:      ctx.String("cpu-set"),
+			})
 		return nil
 	},
 }
@@ -91,26 +102,26 @@ var RunCommand = cli.Command{
 // Run fork 出当前进程，执行 init 命令。
 // 它首先会 clone 出来一批 namespace 隔离的进程，然后在子进程中，调用 /proc/self/exe，也就是自己调用自己。
 // 发送 init 参数，调用我们写的 init 方法，去初始化容器的一些资源
-func Run(tty, detach bool, containerName string, imageTar, volume, networkName string, envs, args []string,
-	res *cgroup.ResourceConfig) {
+func Run(tty, detach bool, containerName string, imageTar, networkName string,
+	envs, args, volumes []string, portMappings map[int]int, res *cgroup.ResourceConfig) {
 	rootDir, err := os.Getwd()
 	if err != nil {
 		logrus.Fatalf("failed to get current directory: %v", err)
 	}
 	var writeLayer, workLayer, workspace string
-	writeLayer, workLayer, workspace, err = layer.CreateWorkspace(rootDir, imageTar, containerName, volume)
+	writeLayer, workLayer, workspace, err = layer.CreateWorkspace(rootDir, imageTar, containerName, volumes)
 	if err != nil {
 		logrus.Fatalf("failed to create workspace: %v", err)
 	}
 	defer func() {
-		if !detach {
-			layer.DeleteWorkspace(workspace, workLayer, writeLayer, volume)
+		if !detach && err == nil {
+			layer.DeleteWorkspace(workspace, workLayer, writeLayer, volumes)
 		}
 	}()
 
-	cgroupManager := cgroup.NewManager("my-docker-cgroup")
+	cgroupManager := cgroup.NewManager("my-runc-cgroup")
 	defer func() {
-		if !detach {
+		if !detach && err == nil {
 			if err = cgroupManager.Destroy(); err != nil {
 				logrus.Warningf("failed to destroy cgroups: %v", err)
 			} else {
@@ -134,11 +145,11 @@ func Run(tty, detach bool, containerName string, imageTar, volume, networkName s
 		logrus.Fatalf("parent process failed to start: %v", err)
 	}
 
-	if err = container.CreateMetadata(parent.Process.Pid, args, containerName, volume); err != nil {
+	if err = container.CreateMetadata(parent.Process.Pid, args, containerName, volumes); err != nil {
 		logrus.Fatalf("failed to record metadata of container (%v): %v", containerName, err)
 	}
 	defer func() {
-		if !detach {
+		if !detach && err == nil {
 			if err = container.RemoveMetadata(containerName); err != nil {
 				logrus.Warningf("failed to remove metadata of container (%v): %v", containerName, err)
 			}
@@ -158,7 +169,7 @@ func Run(tty, detach bool, containerName string, imageTar, volume, networkName s
 				containerName, err)
 			return
 		}
-		if err = network.Connect(networkName, metadata); err != nil {
+		if err = network.Connect(networkName, portMappings, metadata); err != nil {
 			logrus.Fatalf("failed to connect network (%v) for container (%v): %v", networkName, metadata, err)
 		}
 		logrus.Infof("succeeded in connecting network (%v) for container (%v)", networkName, metadata.Name)
@@ -178,8 +189,8 @@ func Run(tty, detach bool, containerName string, imageTar, volume, networkName s
 		if err = parent.Wait(); err != nil {
 			logrus.Errorf("failed to wait parent process stopping: %v", err)
 		}
+		logrus.Info("parent process stopped")
 	}
-	logrus.Info("parent process stopped")
 }
 
 func sendInitArgs(args []string, writePipe *os.File) {
@@ -189,4 +200,29 @@ func sendInitArgs(args []string, writePipe *os.File) {
 	if err := writePipe.Close(); err != nil {
 		logrus.Errorf("failed to close write pipe: %v", err)
 	}
+}
+
+func parsePortMappings(portMappings []string) (map[int]int, error) {
+	result := make(map[int]int)
+	var err error
+	var hostPort, containerPort int64
+	for _, kv := range portMappings {
+		splits := strings.Split(kv, ":")
+		if len(splits) < 2 {
+			return nil, fmt.Errorf("invalid port mapping: %v", kv)
+		}
+		hostPort, err = strconv.ParseInt(splits[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid host port in port mappings: %v", splits[0])
+		}
+		containerPort, err = strconv.ParseInt(splits[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid container port in port mappings: %v", splits[1])
+		}
+		if _, ok := result[int(hostPort)]; ok {
+			return nil, fmt.Errorf("duplicate host port in port mappings: %v", hostPort)
+		}
+		result[int(hostPort)] = int(containerPort)
+	}
+	return result, nil
 }

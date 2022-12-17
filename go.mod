@@ -1,4 +1,4 @@
-module github.com/wangao1236/my-docker
+module github.com/wangao1236/my-runc
 
 go 1.14
 
